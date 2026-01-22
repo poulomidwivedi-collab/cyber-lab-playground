@@ -1,0 +1,335 @@
+# Sigma Rules for Detection Engineering
+# These rules are written in Sigma format and can be converted to SIEM-specific queries
+# Sigma is a generic and open signature format for log events
+# Reference: https://sigma.readthedocs.io/
+
+---
+# Rule 1: Detect Pass-the-Hash attacks (Windows)
+title: Possible Pass-the-Hash Activity via Windows API
+id: f193b70c-7e76-42d6-8dd7-e89dcdeb2caf
+status: experimental
+description: Detects the use of the Win32 API CreateProcessWithLogonW without credentials
+references:
+  - https://attack.mitre.org/techniques/T1550/002/
+author: Security Lab
+date: 2024/01/15
+modified: 2024/01/15
+tags:
+  - attack.lateral_movement
+  - attack.credential_access
+  - t1550.002
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection:
+    EventID: 1
+    Image|endswith: '\\lsass.exe'
+    ParentImage|endswith: '\\mimilsa.exe'
+  filter:
+    - User: 'SYSTEM'
+  condition: selection and not filter
+falsepositives:
+  - Legitimate administrative tools
+response:
+  - Block process
+  - Alert SOC team
+
+---
+# Rule 2: Detect Mimikatz execution
+title: Mimikatz Execution via ProcDump
+id: 33e002b2-a9ed-408b-b186-5b76619e0e1e
+status: stable
+description: Detects the execution of Mimikatz by ProcDump or similar techniques
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection1:
+    Image|endswith: '\\procdump.exe'
+    CommandLine|contains: 'lsass'
+  selection2:
+    Image|endswith: '\\mimikatz.exe'
+    ParentImage|endswith: '\\cmd.exe'
+  selection3:
+    TargetObject: 'HKLM\\System\\CurrentControlSet\\Control\\Lsa'
+    EventType: 'SetValue'
+  condition: selection1 or selection2 or selection3
+falsepositives:
+  - None known
+response:
+  - Immediate isolation
+  - Forensic collection
+  - Alert tier-1 analyst
+
+---
+# Rule 3: Detect Kerberoasting attacks
+title: Kerberoast Service Account Discovery
+id: e4a6b256-3e47-40ca-8069-e78a180b8dff
+status: experimental
+description: Detects potential Kerberoasting activity
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID:
+      - 4769  # A Kerberos service ticket was requested
+    ServiceName: '*'
+    TicketOptions: '0x40810000'
+    TicketEncryptionType: '0x17'  # RC4
+  filter:
+    ComputerName:
+      - 'DOMAIN_COMPUTER$'
+  timeframe: 5m
+  condition: selection and not filter | count(TargetUserName) by IpAddress > 5
+falsepositives:
+  - Domain controller activity
+response:
+  - Investigate service accounts
+  - Check for TGS-REP roasting
+
+---
+# Rule 4: Detect Persistence via Scheduled Tasks
+title: Creation of Scheduled Task for Persistence
+id: d5d415ee-4dce-4b41-a79f-dced62757842
+status: stable
+description: Detects suspicious scheduled task creation
+references:
+  - https://attack.mitre.org/techniques/T1053/005/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection:
+    EventID: 1
+    Image|endswith: '\\schtasks.exe'
+    CommandLine|contains:
+      - '/create'
+      - '/sc minute'
+      - '/sc onstart'
+  filter:
+    User:
+      - 'SYSTEM'
+      - 'NT AUTHORITY\\SYSTEM'
+  condition: selection and not filter
+falsepositives:
+  - Legitimate administrative automation
+response:
+  - Disable task
+  - Remove persistence mechanism
+  - Alert incident response
+
+---
+# Rule 5: Detect WebShell Upload via IIS
+title: IIS Suspicious Upload Activity
+id: 8b3a6f7c-5e8b-4d2f-9a1c-3f7e8d9c0b1a
+status: experimental
+description: Detects potential web shell uploads to IIS
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: webserver
+  service: iis
+detection:
+  selection:
+    cs_uri_stem|contains:
+      - '.asp'
+      - '.aspx'
+      - '.php'
+      - '.jsp'
+    cs_method: 'PUT'
+    sc_status: 200
+  filter:
+    c_ip:
+      - '192.168.1.0/24'  # Internal admin range
+  condition: selection and not filter
+falsepositives:
+  - Legitimate web application deployment
+response:
+  - Quarantine file
+  - Review upload source
+  - Scan for malware
+
+---
+# Rule 6: Detect Ransomware File Encryption Activity
+title: Mass File Encryption Activity
+id: c6fa2b3d-1d4e-4f5a-8b9c-7d2e3f1a5c8b
+status: experimental
+description: Detects mass file encryption patterns typical of ransomware
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection:
+    EventID: 23  # FileCreate
+    TargetFilename|contains:
+      - '.encrypted'
+      - '.locked'
+      - '.crypto'
+      - '.vvv'
+      - '.cerber'
+  aggregate:
+    timeframe: 5m
+    condition: TargetFilename > 50
+  condition: selection | count(ProcessId) by User > 1
+falsepositives:
+  - Backup operations
+  - Legitimate encryption tools
+response:
+  - Immediate network isolation
+  - Block process
+  - Begin incident response
+
+---
+# Rule 7: Detect Command Injection via PowerShell
+title: PowerShell Command Injection Detection
+id: e7c5e8b1-2d3f-4a5b-6c7d-8e9f0a1b2c3d
+status: experimental
+description: Detects suspicious PowerShell command execution patterns
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: powershell
+detection:
+  selection:
+    EventID: 4104
+    ScriptBlockText|contains:
+      - 'IEX '
+      - 'Invoke-Expression'
+      - 'cmd.exe'
+      - 'powershell.exe -EncodedCommand'
+    ScriptBlockText|regex: 'from_base64string|DownloadString|WebClient'
+  timeframe: 1m
+  condition: selection | count(UserId) > 3
+falsepositives:
+  - Legitimate automation scripts
+response:
+  - Investigate script source
+  - Block if malicious
+  - Alert security team
+
+---
+# Rule 8: Detect DNS Exfiltration
+title: DNS Tunneling Detection
+id: f1a5c2e3-b4d6-4f8a-9b1c-2d3e4f5a6b7c
+status: experimental
+description: Detects potential DNS tunneling for data exfiltration
+references:
+  - https://attack.mitre.org/techniques/T1041/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: network
+  service: dns
+detection:
+  selection:
+    query_type: 'A'
+    query_length: '> 100'
+    query_name|contains:
+      - 'exfil'
+      - 'data'
+      - 'command'
+  aggregate:
+    timeframe: 10m
+    condition: query_name > 20 by client_ip
+  condition: selection
+falsepositives:
+  - Legitimate long domain names
+response:
+  - Block DNS queries
+  - Investigate client
+  - Review network logs
+
+---
+# Rule 9: Detect Lateral Movement via RDP
+title: Suspicious RDP Activity from Endpoint
+id: a3b5c7d9-e1f3-4b5d-6f8a-9b1c2d3e4f5a
+status: experimental
+description: Detects lateral movement attempts via Remote Desktop Protocol
+references:
+  - https://attack.mitre.org/techniques/T1021/001/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4624
+    LogonType: 10  # RemoteInteractive
+    TargetUserName|contains:
+      - 'admin'
+      - 'service'
+  filter:
+    IpAddress|startswith:
+      - '192.168.1.'
+      - '10.0.0.'
+  timeframe: 5m
+  condition: selection and not filter | count(TargetUserName) by IpAddress > 3
+falsepositives:
+  - Legitimate RDP sessions
+  - Help desk activities
+response:
+  - Terminate RDP session
+  - Investigate source IP
+  - Check for unauthorized access
+
+---
+# Rule 10: Detect Privilege Escalation via Windows Tokens
+title: Token Impersonation for Privilege Escalation
+id: b4c6d8ea-f2a4-5b6d-8e9f-1a2c3d4e5f6a
+status: experimental
+description: Detects potential privilege escalation via token impersonation
+references:
+  - https://attack.mitre.org/techniques/T1134/
+author: Security Lab
+date: 2024/01/15
+logsource:
+  product: windows
+  service: sysmon
+detection:
+  selection:
+    EventID: 8  # CreateRemoteThread
+    SourceImage|endswith:
+      - '\\powershell.exe'
+      - '\\cmd.exe'
+    TargetImage|endswith:
+      - '\\lsass.exe'
+      - '\\winlogon.exe'
+  condition: selection
+falsepositives:
+  - None known
+response:
+  - Block process
+  - Immediate investigation
+  - Incident response activation
+
+---
+validation:
+  enabled: true
+  level: prod
+  conversion_targets:
+    - kql
+    - elasticsearch
+    - splunk
+    - elastalert
