@@ -1,10 +1,13 @@
 # Red Team Lab - Offensive Security Exercises
 
 **Author:** Poulomi Dwivedi ([@poulomidwivedi-collab](https://github.com/poulomidwivedi-collab))  
-**Education:** MSc Cybersecurity (2024, University of the West of England) | BCA (Lovely Professional University)
+**Role:** Senior Security Engineer @ Aviva
+**Education:** MBA Innovation (2020, University of London) | MSc Cybersecurity (2024, University of the West of England) | MSc Computer Science (2011) | BSc Computer Science (2008) | BCA (Lovely Professional University)
+**Location:** Bristol, UK
+**Purpose:** Advanced offensive security training, attack simulation, and defense validation in isolated lab environments
+**Compliance Context:** All exercises conducted in TEST ENVIRONMENTS ONLY with proper authorization and OPSEC protocolsUniversity of the West of England) | MSc Computer Science (2011) | BSc Computer Science (2008) | BCA (Lovely Professional University)  
 **Location:** Bristol, UK  
-**Role:** Detection Engineering Specialist @ Aviva, MSc Graduate
-**Purpose:** Advanced offensive security training, attack simulation, and defense validation in isolated lab environments  
+**Purpose:** Advanced offensive security training, attack simulation, and defense validation in isolated lab environmentsattack simulation, and defense validation in isolated lab environments  
 **Compliance Context:** All exercises conducted in TEST ENVIRONMENTS ONLY with proper authorization and OPSEC protocols  
 
 ---
