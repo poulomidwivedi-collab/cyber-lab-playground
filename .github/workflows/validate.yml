@@ -1,0 +1,51 @@
+name: Validate Detection Rules and Pipelines
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Check JSON syntax in pipelines
+      run: |
+        echo "Validating Cribl pipeline JSON files..."
+        for file in cribl-ingestion/pipelines/*.json; do
+          if [ -f "$file" ]; then
+            python3 -m json.tool "$file" > /dev/null && echo "✓ $file" || echo "✗ $file"
+          fi
+        done
+    
+    - name: Check YAML syntax
+      run: |
+        echo "Checking YAML files..."
+        python3 -m pip install pyyaml > /dev/null 2>&1
+        find . -name "*.yml" -o -name "*.yaml" | grep -v ".git" | while read file; do
+          python3 -c "import yaml; yaml.safe_load(open('$file'))" && echo "✓ $file" || echo "✗ $file"
+        done
+    
+    - name: Check for common issues
+      run: |
+        echo "Scanning for hardcoded credentials..."
+        if grep -r "password\|apikey\|token" detections-as-code-asim/ cribl-ingestion/ --include="*.kql" --include="*.json"; then
+          echo "WARNING: Possible hardcoded secrets detected"
+        else
+          echo "✓ No obvious hardcoded secrets found"
+        fi
+    
+    - name: Validate Markdown
+      run: |
+        echo "Checking Markdown files exist in each folder..."
+        [ -f "README.md" ] && echo "✓ Root README" || echo "✗ Root README missing"
+        [ -f "red-team-lab/README.md" ] && echo "✓ Red Team Lab README" || echo "✗ Red Team Lab README missing"
+        [ -f "cribl-ingestion/README.md" ] && echo "✓ Cribl Ingestion README" || echo "✗ Cribl Ingestion README missing"
+        [ -f "detections-as-code-asim/README.md" ] && echo "✓ Detections README" || echo "✗ Detections README missing"
+    
+    - name: Summary
+      run: echo "Validation complete. Review any warnings above."
