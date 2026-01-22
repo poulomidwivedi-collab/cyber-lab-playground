@@ -1,0 +1,289 @@
+# AWS CloudTrail to ASIM Normalization Pipeline
+# Cribl Stream pipeline for normalizing AWS CloudTrail logs to ASIM format
+# For use with Azure Sentinel, Splunk, or other SIEM platforms
+
+version: 1
+pipeline_name: AWS CloudTrail to ASIM
+description: |
+  Normalizes AWS CloudTrail events to Azure Sentinel ASIM schema
+  Handles multiple event types including API calls, authentication, and resource changes
+
+input_sources:
+  - name: cloudtrail_s3
+    type: aws_s3
+    description: CloudTrail logs from S3 bucket
+    config:
+      bucket: 'cloudtrail-logs'
+      region: 'us-east-1'
+      prefix: 'AWSLogs/'
+      file_pattern: '*.json.gz'
+
+transforms:
+  - id: parse_json
+    type: field_extraction
+    description: Parse CloudTrail JSON events
+    config:
+      source_field: _raw
+      target_field: event
+      format: json
+
+  - id: flatten_records
+    type: script
+    description: Extract Records array from CloudTrail event
+    script: |
+      const records = _get('event.Records');
+      if (!records || !Array.isArray(records)) {
+        return [];
+      }
+      return records.map(record => {
+        _raw = JSON.stringify(record);
+        return __e(record);
+      });
+
+  - id: normalize_to_asim
+    type: script
+    description: Normalize CloudTrail events to ASIM schema
+    script: |
+      // ASIM Authentication Events Normalization
+      const eventName = _get('eventName');
+      const sourceIP = _get('sourceIPAddress');
+      const userIdentity = _get('userIdentity') || {};
+      const awsRegion = _get('awsRegion');
+      const eventTime = _get('eventTime');
+      const errorCode = _get('errorCode');
+      const errorMessage = _get('errorMessage');
+      const requestParameters = _get('requestParameters') || {};
+      const responseElements = _get('responseElements') || {};
+      const userAgent = _get('userAgent');
+      const eventID = _get('eventID');
+
+      // Determine principal identifier
+      let principalId = userIdentity.principalId || 'unknown';
+      let actorUserId = principalId;
+      let actorUserIdType = 'AwsAccountId';
+      let actorUsername = userIdentity.userName || principalId;
+
+      if (userIdentity.type === 'IAMUser') {
+        actorUserIdType = 'AwsIAMUser';
+      } else if (userIdentity.type === 'Root') {
+        actorUsername = 'root';
+        actorUserIdType = 'AwsRoot';
+      } else if (userIdentity.type === 'AssumedRole') {
+        const roleArn = userIdentity.arn || '';
+        actorUsername = roleArn.split('/').pop() || principalId;
+        actorUserIdType = 'AwsAssumedRole';
+      }
+
+      // ASIM base schema
+      let asimEvent = {
+        EventType: getEventType(eventName),
+        EventResult: errorCode ? 'Failure' : 'Success',
+        EventResultDetails: errorCode || 'Success',
+        EventResultDetailsString: errorMessage,
+        EventVendor: 'AWS',
+        EventProduct: 'CloudTrail',
+        EventSchema: 'NetworkSessionEvent',
+        EventSchemaVersion: '0.1',
+        EventId: eventID,
+        EventCount: 1,
+        EventStartTime: eventTime,
+        EventEndTime: eventTime,
+        TimeGenerated: eventTime,
+
+        // Actor Information
+        ActorUserId: actorUserId,
+        ActorUserIdType: actorUserIdType,
+        ActorUsername: actorUsername,
+        ActorAccountId: userIdentity.accountId,
+        ActorScope: 'Cloud',
+        ActorScopeId: 'AWS',
+
+        // Source Information
+        SrcIpAddr: sourceIP,
+        SrcPortNumber: '',
+        SrcHostname: '',
+        SrcDvcId: '',
+        SrcGeoCountry: '',
+        SrcGeoLatitude: '',
+        SrcGeoLongitude: '',
+
+        // Target/Destination
+        DstHostname: awsRegion,
+        DstResourceId: _get('resources[0].ARN') || '',
+        TargetResources: _get('resources') || [],
+
+        // HTTP/API Details
+        HttpRequestMethod: eventName,
+        HttpUserAgent: userAgent,
+        HttpStatusCode: errorCode ? '400' : '200',
+
+        // Logging/Event Details
+        LogonMethod: 'CloudAPI',
+        LogonProtocol: 'HTTPS',
+        AdditionalFields: {
+          eventSource: _get('eventSource'),
+          eventVersion: _get('eventVersion'),
+          userType: userIdentity.type,
+          mfaUsed: _get('additionalEventData.MFAUsed'),
+          requestParameters: JSON.stringify(requestParameters),
+          responseElements: JSON.stringify(responseElements)
+        }
+      };
+
+      return asimEvent;
+
+      function getEventType(eventName) {
+        if (!eventName) return 'Other';
+        const name = eventName.toLowerCase();
+        
+        if (name.includes('login') || name.includes('consollogin')) return 'Logon';
+        if (name.includes('assume') || name.includes('createrole')) return 'Elevation';
+        if (name.includes('delete') || name.includes('terminate')) return 'DeletionEvent';
+        if (name.includes('create') || name.includes('run')) return 'CreationEvent';
+        if (name.includes('modify') || name.includes('update')) return 'ModificationEvent';
+        if (name.includes('describe') || name.includes('get') || name.includes('list')) return 'ReadEvent';
+        
+        return 'GenericEvent';
+      }
+
+  - id: mask_sensitive_data
+    type: script
+    description: Mask sensitive information
+    script: |
+      // Mask access keys
+      if (_get('requestParameters')) {
+        const params = _get('requestParameters');
+        if (params.accessKeyId) {
+          params.accessKeyId = 'AKIA' + params.accessKeyId.substring(4).replace(/./g, 'X');
+        }
+      }
+      
+      // Mask secret values
+      if (_get('requestParameters.DBMasterUserPassword')) {
+        _assign('requestParameters.DBMasterUserPassword', 'PASSWORD_REDACTED');
+      }
+      
+      if (_get('requestParameters.Password')) {
+        _assign('requestParameters.Password', 'PASSWORD_REDACTED');
+      }
+      
+      return _e;
+
+  - id: geoip_enrichment
+    type: script
+    description: Add GeoIP enrichment for source IP
+    script: |
+      const srcIp = _get('SrcIpAddr');
+      if (srcIp && !srcIp.startsWith('10.') && !srcIp.startsWith('192.168.')) {
+        // In production, use Cribl's GeoIP lookup
+        // This is a placeholder for the actual enrichment
+        const geoData = lookupGeoIP(srcIp);
+        if (geoData) {
+          _assign('SrcGeoCountry', geoData.country);
+          _assign('SrcGeoLatitude', geoData.latitude);
+          _assign('SrcGeoLongitude', geoData.longitude);
+        }
+      }
+      return _e;
+
+  - id: filter_low_value_events
+    type: filter
+    description: Filter out low-value operational events
+    config:
+      exclude_patterns:
+        - 'eventName=GetUser'
+        - 'eventName=ListUsers'
+        - 'eventName=ListRoles'
+        - 'eventName=GetBucketLogging'
+        - 'eventName=DescribeInstances'
+        - 'errorCode=AccessDenied'
+
+outputs:
+  - name: azure_sentinel
+    type: httpevent
+    description: Send normalized events to Azure Sentinel
+    config:
+      url: 'https://{workspace-id}.ods.opinsights.azure.com/api/logs'
+      method: POST
+      headers:
+        'Content-Type': 'application/json'
+      auth:
+        type: bearer_token
+        token: '{shared-key}'
+      batch_config:
+        batch_size: 100
+        flush_interval: 30
+      retry_policy:
+        max_retries: 3
+        retry_delay: 5000
+        retry_on_codes:
+          - 429
+          - 500
+          - 502
+          - 503
+
+  - name: splunk
+    type: http
+    description: Alternative output to Splunk HEC
+    config:
+      url: 'https://splunk-hec.example.com:8088/services/collector'
+      headers:
+        'Authorization': 'Splunk {hec-token}'
+      batch_config:
+        batch_size: 100
+
+  - name: s3_archive
+    type: s3
+    description: Archive normalized events to S3
+    config:
+      bucket: 'normalized-logs-archive'
+      prefix: 'cloudtrail/normalized/'
+      compression: gzip
+
+metrics:
+  - name: cloudtrail_events_total
+    type: counter
+    description: Total CloudTrail events processed
+
+  - name: cloudtrail_events_failed
+    type: counter
+    description: CloudTrail events with errors
+
+  - name: cloudtrail_processing_time
+    type: histogram
+    description: Time to process CloudTrail events
+
+routing_rules:
+  - id: high_priority_events
+    match: |
+      (EventResult == 'Failure' && ErrorCode != 'AccessDenied') ||
+      EventType == 'Elevation' ||
+      EventType == 'DeletionEvent'
+    destination: [azure_sentinel, splunk]
+    priority: 0
+
+  - id: standard_events
+    match: 'EventResult == "Success"'
+    destination: [azure_sentinel, s3_archive]
+    priority: 1
+
+  - id: security_events
+    match: 'eventSource == "iam.amazonaws.com" || eventSource == "ec2.amazonaws.com"'
+    destination: azure_sentinel
+    priority: 0
+
+# Sample Configuration for deployment
+deployment:
+  mode: distributed
+  worker_count: 4
+  throughput_target: 25000
+  
+monitoring:
+  alerts:
+    - name: high_error_rate
+      condition: 'error_rate > 0.05'
+      action: notify
+      
+    - name: processing_latency
+      condition: 'p95_latency > 5000'
+      action: notify
