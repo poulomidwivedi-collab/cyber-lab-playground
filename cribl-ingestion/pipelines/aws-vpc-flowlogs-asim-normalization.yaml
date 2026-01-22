@@ -1,0 +1,272 @@
+# AWS VPC Flow Logs to ASIM Normalization Pipeline
+# Cribl Stream pipeline for normalizing VPC Flow Logs to ASIM NetworkSession schema
+# Supports v2, v3, and v4 Flow Log formats
+
+version: 1
+pipeline_name: AWS VPC FlowLogs to ASIM
+description: |
+  Normalizes AWS VPC Flow Logs to Azure Sentinel ASIM NetworkSession schema
+  Handles accept/reject decisions, protocol identification, and traffic analysis
+  Enriches with threat intelligence and geoIP data
+
+input_sources:
+  - name: flowlogs_s3
+    type: aws_s3
+    description: VPC Flow Logs from S3 bucket (CloudWatch Logs Insights export)
+    config:
+      bucket: 'vpc-flowlogs'
+      region: 'us-east-1'
+      prefix: 'AWSLogs/'
+      file_pattern: '*.log.gz'
+
+transforms:
+  - id: parse_log_format
+    type: script
+    description: Parse VPC Flow Logs format (space-separated fields)
+    script: |
+      // VPC Flow Logs format v5
+      // version account-id interface-id srcaddr dstaddr srcport dstport protocol packets bytes
+      // start end action log-status vpc-id subnet-id instance-id interface-type src-region dst-region
+      const fields = _raw.split(/\s+/);
+      
+      if (fields.length < 14) {
+        return {};
+      }
+      
+      let parsed = {
+        version: fields[0],
+        accountId: fields[1],
+        interfaceId: fields[2],
+        srcAddr: fields[3],
+        dstAddr: fields[4],
+        srcPort: parseInt(fields[5]),
+        dstPort: parseInt(fields[6]),
+        protocol: fields[7],
+        packets: parseInt(fields[8]),
+        bytes: parseInt(fields[9]),
+        startTime: parseInt(fields[10]),
+        endTime: parseInt(fields[11]),
+        action: fields[12],
+        logStatus: fields[13],
+        vpcId: fields[14] || '',
+        subnetId: fields[15] || '',
+        instanceId: fields[16] || '',
+        interfaceType: fields[17] || '',
+        srcRegion: fields[18] || '',
+        dstRegion: fields[19] || '',
+        pktSrcAddr: fields[20] || '',
+        pktDstAddr: fields[21] || '',
+        region: fields[22] || '',
+        flowLogId: fields[23] || '',
+        vpcFlowLogId: fields[24] || ''
+      };
+      
+      return parsed;
+
+  - id: normalize_to_asim
+    type: script
+    description: Normalize VPC Flow Logs to ASIM NetworkSession schema
+    script: |
+      const srcAddr = _get('srcAddr');
+      const dstAddr = _get('dstAddr');
+      const srcPort = _get('srcPort');
+      const dstPort = _get('dstPort');
+      const protocol = _get('protocol');
+      const action = _get('action');
+      const packets = _get('packets');
+      const bytes = _get('bytes');
+      const startTime = _get('startTime') * 1000; // Convert Unix timestamp
+      const endTime = _get('endTime') * 1000;
+      const interfaceId = _get('interfaceId');
+      const vpcId = _get('vpcId');
+      const subnetId = _get('subnetId');
+      
+      // Protocol number to name mapping
+      const protocolMap = {
+        '6': 'TCP',
+        '17': 'UDP',
+        '1': 'ICMP',
+        '41': 'IPv6',
+        '50': 'ESP',
+        '51': 'AH'
+      };
+      
+      const protocolName = protocolMap[protocol] || 'Other';
+      
+      let asimEvent = {
+        EventType: 'NetworkSession',
+        EventResult: action === 'ACCEPT' ? 'Success' : 'Failure',
+        EventResultDetails: action,
+        EventVendor: 'AWS',
+        EventProduct: 'VPC Flow Logs',
+        EventSchema: 'NetworkSessionEvent',
+        EventSchemaVersion: '0.2.1',
+        EventCount: 1,
+        EventStartTime: new Date(startTime).toISOString(),
+        EventEndTime: new Date(endTime).toISOString(),
+        EventDuration: (endTime - startTime) / 1000, // in seconds
+        TimeGenerated: new Date().toISOString(),
+        
+        // Source
+        SrcIpAddr: srcAddr,
+        SrcPortNumber: srcPort,
+        SrcHostname: '',
+        SrcDvcId: interfaceId,
+        SrcGeoCountry: '',
+        
+        // Destination
+        DstIpAddr: dstAddr,
+        DstPortNumber: dstPort,
+        DstHostname: '',
+        DstDvcId: '', 
+        DstGeoCountry: '',
+        
+        // Protocol & Network
+        NetworkProtocol: protocolName,
+        NetworkDirection: 'Inbound',
+        
+        // Traffic Statistics
+        NetworkPackets: packets,
+        NetworkBytes: bytes,
+        NetworkBytesReceived: bytes,
+        NetworkBytesSent: bytes,
+        
+        // AWS Context
+        AdditionalFields: {
+          vpcId: vpcId,
+          subnetId: subnetId,
+          interfaceId: interfaceId,
+          srcRegion: _get('srcRegion'),
+          dstRegion: _get('dstRegion'),
+          flowLogId: _get('flowLogId'),
+          accountId: _get('accountId')
+        }
+      };
+      
+      return asimEvent;
+
+  - id: threat_intelligence_lookup
+    type: script
+    description: Enrich with threat intelligence data
+    script: |
+      const srcIp = _get('SrcIpAddr');
+      const dstIp = _get('DstIpAddr');
+      
+      // In production, integrate with threat feeds
+      // This is placeholder for actual TI lookup
+      const maliciousIps = [
+        '203.0.113.50',
+        '198.51.100.45'
+      ];
+      
+      if (maliciousIps.includes(srcIp)) {
+        _assign('SrcThreatLevel', 'High');
+        _assign('SrcThreatIndicator', 'KnownMalicious');
+      }
+      
+      if (maliciousIps.includes(dstIp)) {
+        _assign('DstThreatLevel', 'High');
+        _assign('DstThreatIndicator', 'KnownMalicious');
+      }
+      
+      return _e;
+
+  - id: geoip_enrichment
+    type: script
+    description: Add GeoIP enrichment
+    script: |
+      const srcIp = _get('SrcIpAddr');
+      const dstIp = _get('DstIpAddr');
+      
+      // Skip private IPs
+      if (!srcIp.startsWith('10.') && !srcIp.startsWith('172.') && !srcIp.startsWith('192.168.')) {
+        const srcGeo = lookupGeoIP(srcIp);
+        if (srcGeo) {
+          _assign('SrcGeoCountry', srcGeo.country);
+          _assign('SrcGeoLatitude', srcGeo.latitude);
+          _assign('SrcGeoLongitude', srcGeo.longitude);
+        }
+      }
+      
+      if (!dstIp.startsWith('10.') && !dstIp.startsWith('172.') && !dstIp.startsWith('192.168.')) {
+        const dstGeo = lookupGeoIP(dstIp);
+        if (dstGeo) {
+          _assign('DstGeoCountry', dstGeo.country);
+          _assign('DstGeoLatitude', dstGeo.latitude);
+          _assign('DstGeoLongitude', dstGeo.longitude);
+        }
+      }
+      
+      return _e;
+
+  - id: filter_low_value
+    type: filter
+    description: Filter DNS and DHCP noise
+    config:
+      exclude_patterns:
+        - 'DstPortNumber=53'  # DNS
+        - 'DstPortNumber=67'  # DHCP
+        - 'protocol=1'         # ICMP ping floods
+        - 'SrcIpAddr=169.254'  # Link-local addresses
+
+outputs:
+  - name: azure_sentinel
+    type: httpevent
+    description: Send to Azure Sentinel
+    config:
+      url: 'https://{workspace-id}.ods.opinsights.azure.com/api/logs'
+      method: POST
+      headers:
+        'Content-Type': 'application/json'
+      auth:
+        type: bearer_token
+        token: '{shared-key}'
+      batch_config:
+        batch_size: 500
+        flush_interval: 30
+
+  - name: splunk
+    type: http
+    description: Alternative Splunk HEC output
+    config:
+      url: 'https://splunk-hec.example.com:8088/services/collector'
+
+routing_rules:
+  - id: rejected_traffic
+    match: 'EventResult == "Failure"'
+    destination: azure_sentinel
+    priority: 0
+
+  - id: large_data_transfers
+    match: 'NetworkBytes > 1000000'
+    destination: [azure_sentinel, splunk]
+    priority: 0
+
+  - id: suspicious_ports
+    match: 'DstPortNumber == 445 || DstPortNumber == 139 || DstPortNumber == 3389'
+    destination: azure_sentinel
+    priority: 0
+
+  - id: standard_traffic
+    match: 'EventResult == "Success"'
+    destination: azure_sentinel
+    priority: 1
+
+monitoring:
+  metrics:
+    - name: flowlogs_processed
+      type: counter
+      description: Total flow log records processed
+    
+    - name: rejected_connections
+      type: counter
+      description: Count of rejected connections
+    
+    - name: avg_bytes_per_session
+      type: histogram
+      description: Average bytes transferred per session
+
+performance:
+  throughput_target: 50000
+  workers: 8
+  buffer_size: 100000
