@@ -2,11 +2,11 @@
 
 **Author:** Poulomi Dwivedi ([@poulomidwivedi-collab](https://github.com/poulomidwivedi-collab))  
 **Role:** Senior Security Engineer @ Aviva
-**Education:** MBA Innovation (2020, University of London) | MSc Cybersecurity (2024, University of the West of England) | MSc Computer Science (2011) | BSc Computer Science (2008) | BCA (Lovely Professional University)
+**Education:** MBA Innovation (2020, University of London) | MSc Cybersecurity (2024, University of the West of England) | MSc Computer Science (2011) | BSc Computer Science (2008) 
 **Location:** Bristol, UK
 **Purpose:** Advanced offensive security training, attack simulation, and defense validation in isolated lab environments
-**Compliance Context:** All exercises conducted in TEST ENVIRONMENTS ONLY with proper authorization and OPSEC protocolsUniversity of the West of England) | MSc Computer Science (2011) | BSc Computer Science (2008) | BCA (Lovely Professional University)  
-**Location:** Bristol, UK  
+**Compliance Context:** All exercises conducted in TEST ENVIRONMENTS ONLY with proper authorization and OPSEC protocols*
+*Location:** Bristol, UK  
 **Purpose:** Advanced offensive security training, attack simulation, and defense validation in isolated lab environmentsattack simulation, and defense validation in isolated lab environments  
 **Compliance Context:** All exercises conducted in TEST ENVIRONMENTS ONLY with proper authorization and OPSEC protocols  
 
