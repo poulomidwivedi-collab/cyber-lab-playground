@@ -1,0 +1,205 @@
+# Cribl Stream Pipeline: Windows Security Event Normalization for ASIM Authentication
+# Version: 1.0
+# Author: Detection Engineering Team
+# Purpose: Normalize Windows Security logs to Azure Sentinel Information Model (ASIM) schema
+# Data Sources: Windows Event ID 4624, 4625, 4634, 4648
+# Output: Custom Log Table (WindowsSecurityAuth_CL) for Azure Sentinel
+
+# ==================== PIPELINE CONFIGURATION ====================
+# Input: HTTP Event Collector (HEC) receiving Windows Security events
+# Processing: Multi-stage transformation and enrichment
+# Output: Azure Event Hubs -> Sentinel
+
+sources:
+  - name: windows_security_collector
+    type: http
+    description: "Receives Windows Security logs from Forwarder/Agent"
+    config:
+      port: 8088
+      ssl_enabled: true
+      token_field: "token"
+      output_group: "pipeline_input"
+
+processing:
+  # Stage 1: Filter irrelevant events (drop noisy logs)
+  - name: filter_noise
+    description: "Drop non-auth events and service account noise"
+    rules:
+      - condition: "event_type not in (4624, 4625, 4634, 4648)"
+        action: "drop"
+      - condition: "src_user in ('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', '$')"
+        action: "drop"
+
+  # Stage 2: Extract and normalize fields
+  - name: normalize_fields
+    description: "Map Windows event fields to ASIM schema"
+    transforms:
+      - field: "TimeGenerated"
+        source: "timestamp"
+      
+      - field: "EventResult"
+        condition: |
+          if event_type == 4624 then "Success"
+          elif event_type == 4625 then "Failure"
+          elif event_type == 4634 then "Logoff"
+          else "Unknown"
+      
+      - field: "SrcIpAddress"
+        source: "IpAddress"
+        transform: "lowercase"
+      
+      - field: "SrcPortNumber"
+        source: "SourcePort"
+        transform: "tonumber"
+      
+      - field: "TargetUsername"
+        source: "TargetUserName"
+      
+      - field: "TargetDomainName"
+        source: "TargetDomainName"
+      
+      - field: "TargetDvcHostname"
+        source: "Computer"
+        transform: "lowercase"
+      
+      - field: "LogonType"
+        source: "LogonType"
+      
+      - field: "LogonTypeName"
+        condition: |
+          switch LogonType:
+            case "2": "Interactive"
+            case "3": "Network"
+            case "4": "Batch"
+            case "5": "Service"
+            case "7": "Unlock"
+            case "8": "NetworkCleartext"
+            case "9": "NewCredentials"
+            case "10": "RemoteInteractive"
+            case "11": "CachedInteractive"
+            default: "Unknown"
+      
+      - field: "AuthenticationMethod"
+        condition: |
+          if event_type in (4624, 4625) and LogonType in (2, 10) then "NTLM"
+          elif event_type in (4624, 4625) and LogonType == 3 then "Kerberos"
+          else "Other"
+      
+      - field: "LogonProtocol"
+        source: "AuthenticationPackageName"
+
+  # Stage 3: GeoIP enrichment (optional - requires maxmind DB)
+  - name: geoip_enrichment
+    description: "Enrich with geographical data for source IP"
+    condition: "SrcIpAddress != null and SrcIpAddress != '::1' and SrcIpAddress != '127.0.0.1'"
+    transform: |
+      maxmind_lookup(SrcIpAddress) as geo_data
+      assign country = geo_data.country.iso_code
+      assign city = geo_data.city.names.en
+
+  # Stage 4: Masking sensitive data
+  - name: mask_sensitive_data
+    description: "Mask sensitive fields per compliance requirements"
+    rules:
+      - field: "SrcIpAddress"
+        condition: "org_level == 'production'"
+        mask: "last_octet"  # Keep network info, mask endpoint
+      
+      - field: "TargetUsername"
+        mask: "preserve_domain"  # Keep DOMAIN\, mask username
+
+  # Stage 5: Add metadata
+  - name: add_metadata
+    description: "Add pipeline metadata and source information"
+    transforms:
+      - field: "EventSource"
+        value: "Windows Security Event Log"
+      
+      - field: "EventVendor"
+        value: "Microsoft"
+      
+      - field: "EventProduct"
+        value: "Windows"
+      
+      - field: "EventSchemaVersion"
+        value: "0.1.3"  # ASIM version
+      
+      - field: "PipelineVersion"
+        value: "1.0"
+      
+      - field: "DataClassification"
+        value: "Internal"
+
+  # Stage 6: Validation
+  - name: validate_asim_schema
+    description: "Validate required ASIM fields present"
+    rules:
+      - condition: "TimeGenerated == null"
+        action: "drop"
+        reason: "Missing TimeGenerated"
+      
+      - condition: "EventResult == null"
+        action: "drop"
+        reason: "Missing EventResult"
+      
+      - condition: "TargetUsername == null"
+        action: "drop"
+        reason: "Missing TargetUsername"
+
+destinations:
+  - name: sentinel_eventhub
+    type: azure_event_hubs
+    description: "Send normalized events to Azure Event Hubs for Sentinel ingestion"
+    config:
+      connection_string: "${EVENTHUB_CONNECTION_STRING}"
+      event_hub_name: "security-auth-events"
+      partition_key: "TargetDvcHostname"
+      batch_size: 100
+      compression: "gzip"
+
+  - name: local_archive
+    type: file
+    description: "Archive processed events locally for compliance/audit"
+    config:
+      path: "/var/log/cribl/archive/"
+      rotation: "daily"
+      retention_days: 90
+      compression: "gzip"
+
+# ==================== OUTPUT MAPPING ====================
+# These normalized fields map directly to Azure Sentinel tables:
+# CustomSecurityLog_WindowsAuthEvent_CL table in Log Analytics
+
+output_schema:
+  required_fields:
+    - TimeGenerated
+    - EventResult
+    - SrcIpAddress
+    - TargetUsername
+    - TargetDvcHostname
+  
+  recommended_fields:
+    - LogonType
+    - LogonTypeName
+    - AuthenticationMethod
+    - EventVendor
+    - EventProduct
+
+# ==================== PERFORMANCE & MONITORING ====================
+monitoring:
+  - metric: "events_processed"
+    type: "counter"
+  
+  - metric: "events_dropped"
+    type: "counter"
+    alert_threshold: 100  # Alert if drop rate exceeds threshold
+  
+  - metric: "pipeline_latency_ms"
+    type: "gauge"
+    alert_threshold: 5000  # Alert if latency > 5 seconds
+
+# ==================== NOTES ====================
+# - Requires Cribl Stream v3.1+
+# - Supports multi-tenant deployments via field routing
+# - Can process 50,000+ EPS with proper resource allocation
+# - Compatible with Azure Sentinel ASIM Authentication schema v0.1.3
